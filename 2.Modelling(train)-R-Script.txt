@@ -1,0 +1,220 @@
+#target should not be 0 and 1 for train  function 
+
+fitControl <- trainControl(method = "cv", number = 5, classProbs = T, savePredictions = 'final') 
+
+set.seed(1234)
+ind<-sample(2, nrow(bb), replace=TRUE, prob=c(0.7,0.3))
+train.data<-bb[ind==1,]
+test.data<-bb[ind==2,]
+#****************************************************
+#logistics regression
+
+set.seed(1234)
+model_glm<-train(train.data[,-c(16)],train.data$y,method="glm",trControl = fitControl,tuneLength = 3)
+
+
+#accuracy
+pred_train_glm<-predict(model_glm,train.data)
+confusionMatrix (pred_train_glm, train.data$y)
+
+pred_test_glm<-predict(model_glm,test.data)
+confusionMatrix (pred_test_glm, test.data$y)
+
+
+#****************************************************************
+#decision tree
+
+tree_grid<-expand.grid(cp=0.0001)
+
+set.seed(1234)
+model_rpart<-train(train.data[,-c(16)],train.data$y,method="rpart",trControl=fitControl,tuneGrid=tree_grid)
+summary(model_rpart)
+
+
+pred_train_tree<-predict(model_rpart,train.data)
+confusionMatrix(pred_train_tree,train.data$y)
+
+pred_test_tree<-predict(model_rpart,test.data)
+confusionMatrix(pred_test_tree,test.data$y)
+
+#***********************************************************
+#gradient boosting
+
+boost_grid<-expand.grid(n.trees=1500,shrinkage=0.1,interaction.depth=4,n.minobsinnode=50)
+set.seed(1234)
+model_boost<-train(train.data[,-c(16)],train.data$y,method="gbm",trControl=fitControl,tuneGrid=boost_grid)
+#bestTree=gbm.perf(model_boost) 
+
+pred_train_boost<-predict(model_boost,train.data)
+confusionMatrix(pred_train_boost,train.data$y)
+
+pred_test_boost<-predict(model_boost,test.data)
+confusionMatrix(pred_test_boost,test.data$y)
+
+
+****************************************************
+#xgboosting
+bb<-bb_smote
+bb$y<-ifelse(bb$y=="no",0,1)
+bb.dum<-dummy.data.frame(bb,sep=".")
+set.seed(1234)
+ind<-sample(2, nrow(bb.dum), replace=TRUE, prob=c(0.7,0.3))
+train.dum<-bb.dum[ind==1,]
+test.dum<-bb.dum[ind==2,]
+
+train.x<-as.matrix(train.dum[,colnames(train.dum)!="y"])
+train.y<-as.matrix(train.dum[,colnames(train.dum)=="y"])
+tr_labels<-train.dum$y
+dtrain<-xgb.DMatrix(data=train.x,label=tr_labels)
+
+test.x<-as.matrix(test.dum[,colnames(test.dum)!="y"])
+test.y<-as.matrix(test.dum[,colnames(test.dum)=="y"])
+test_labels<-test.dum$y
+dtest<-xgb.DMatrix(data=test.x,label=test_labels)
+
+watchlist <- list(train=dtrain,valid=dtest)
+params <- list(booster = "gbtree", objective = "binary:logistic", eta=0.3, gamma=0.01, max_depth=12, min_child_weight=0.5, subsample=1, colsample_bytree=1)
+
+set.seed(1234)
+xgbcv <- xgb.cv( params = params, data = dtrain, nrounds = 500, nfold = 5, showsd = T, stratified = T, print_every_n = 10, early_stopping_rounds = 40, maximize = F)
+xgbcv$best_iteration
+
+
+xgbGrid <- expand.grid(nrounds = 48 , #xgbcv$best_iteration,  #try nrounds=48
+                       eta=0.3, 
+                       gamma=0.01, 
+                       max_depth=12, 
+                       min_child_weight=0.5, 
+                       subsample=1, colsample_bytree=1)
+
+train.dum$y<-ifelse(train.dum$y==0,"no","yes")
+train.dum$y<-as.factor(train.dum$y)
+
+test.dum$y<-ifelse(test.dum$y==0,"no","yes")
+test.dum$y<-as.factor(test.dum$y)
+
+
+set.seed(110)
+model_xgboost <- train(y~.,data=train.dum,method = "xgbTree", 
+                 trControl = fitControl,
+               #  metric = "ROC", 
+               #  preProcess=c('center','scale'),
+                 tuneGrid = xgbGrid,
+                 maximize = F 
+                 )
+                 
+pred_train_xgboost<-predict(model_xgboost,train.dum)
+confusionMatrix (pred_train_xgboost, train.dum$y)
+
+pred_test_xgboost<-predict(model_xgboost,test.dum)
+confusionMatrix (pred_test_xgboost , test.dum$y)
+
+#**************************************************************************
+#neural network
+bb<-bb_smote
+bb$y<-ifelse(bb$y=="no",0,1)
+bb.dum<-dummy.data.frame(bb,sep=".")
+bb.dum$y<-ifelse(bb.dum$y==0,"no","yes")
+bb.dum$y<-as.factor(bb.dum$y)
+
+colnames(bb.dum)
+colnames(bb.dum)[3] <- "jobbluecollar"
+colnames(bb.dum)[13] <- "educationbasic4y"
+colnames(bb.dum)[14] <- "educationbasic6y"
+colnames(bb.dum)[15] <- "educationbasic9y"
+colnames(bb.dum)[17] <- "educationuniversitydegree"
+
+
+set.seed(1234)
+ind<-sample(2, nrow(bb.dum), replace=TRUE, prob=c(0.7,0.3))
+train.dum<-bb.dum[ind==1,]
+test.dum<-bb.dum[ind==2,]
+
+
+col_list <- paste(c(colnames(train.dum[,-c(50)])),collapse="+")
+col_list <- paste(c("y~",col_list),collapse="")
+f <- formula(col_list)
+
+
+
+fitControl3 <- trainControl(method= "cv", number = 5, classProbs = TRUE, verboseIter = TRUE, preProcOptions = list(thresh=0.01, ICAcomp=3, k=5),savePredictions = 'final')
+set.seed(1234)
+model_nnet<-train(f,data=train.dum,method="nnet",
+		preProcess=c('center','scale'),
+		  trControl=fitControl3, 		  
+		  tuneGrid=expand.grid(size=c(10),decay=c(0.5)))
+		  
+pred_train_nnet<-predict(model_nnet,train.dum)
+confusionMatrix(pred_train_nnet,train.dum$y)
+
+pred_test_nnet<-predict(model_nnet,test.dum)
+confusionMatrix(pred_test_nnet,test.dum$y)
+
+
+#***********************************************************************************
+#k-nearest neighbour
+set.seed(1234)
+model_knn<-train(f,data=train.dum,method="knn",
+		preProcess=c('center','scale'),
+		  trControl=fitControl3, 		  
+		  tuneGrid=expand.grid(k=4))
+		  
+pred_train_knn<-predict(model_knn,train.dum)
+confusionMatrix(pred_train_knn,train.dum$y)
+
+pred_test_knn<-predict(model_knn,test.dum)
+confusionMatrix(pred_test_knn,test.dum$y)
+
+#*******************************************************************************************************
+#bagging - target is factor
+bb<-bb_smote
+set.seed(1234)
+ind<-sample(2, nrow(bb), replace=TRUE, prob=c(0.7,0.3))
+train.data<-bb[ind==1,]
+test.data<-bb[ind==2,]
+
+set.seed(1234)
+model_bag<-train(train.data[,-c(16)],train.data$y,data=train.data,method='treebag',trControl = fitControl)
+
+pred_train_bag<-predict(model_bag,train.data)
+confusionMatrix(pred_train_bag,train.data$y)
+
+
+pred_test_bag<-predict(model_bag,test.data)
+confusionMatrix(pred_test_bag,test.data$y)
+
+#*********************************************************
+#random forest
+
+set.seed(1234)
+model_rf<-train(train.data[,-c(16)],train.data$y,method="rf",trControl = fitControl, tuneGrid=expand.grid(mtry=7))
+
+pred_train_rf<-predict(model_rf,train.data)
+confusionMatrix (pred_train_rf, train.data$y)
+
+pred_test_rf<-predict(model_rf,test.data)
+confusionMatrix (pred_test_rf, test.data$y)
+
+#*********************************************************
+#support vector machine - target is factor
+bb<-bb_smote
+bb$y<-ifelse(bb$y=="no",0,1)
+bb.dum<-dummy.data.frame(bb,sep=".")
+bb.dum$y<-as.factor(bb.dum$y)
+set.seed(1234)
+ind<-sample(2, nrow(bb.dum), replace=TRUE, prob=c(0.7,0.3))
+train.dum<-bb.dum[ind==1,]
+test.dum<-bb.dum[ind==2,]
+
+
+set.seed(1234)
+svm_radial<-svm(y~.,data=train.dum,kernel="radial",cost=5, gamma=0.01)
+
+pred_train_rsvm<-predict(svm_radial,train.dum)
+confusionMatrix(data=pred_train_rsvm,reference = train.dum$y)
+
+pred_test_rsvm<-predict(svm_radial, test.dum)
+confusionMatrix(data=pred_test_rsvm,reference = test.dum$y)
+
+#***********************************************************
+

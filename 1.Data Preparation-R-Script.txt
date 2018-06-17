@@ -1,0 +1,325 @@
+library(e1071)
+library(corrplot)
+library(caret)
+library(dplyr)
+library(Hmisc)
+library(rpart)
+library(DMwR)
+library(ROCR)
+library(dummies)
+library(gbm)
+library(xgboost)
+library(ipred)
+library(randomForest)
+library(neuralnet)
+library(pROC)
+
+
+setwd("C:/Users/dgbudale/Downloads/Data Mining with R/Bank Marketing Dataset")
+bb<-read.csv(file="bank_add_full.csv")
+
+str(bb)
+summary(bb) # no missing values
+
+bb1<-bb
+
+
+fact<-select_if(bb,is.factor)
+bb$y<-ifelse(bb$y=="no",0,1)
+num<-select_if(bb,is.numeric)
+
+#chi-sq test for each categorical variable
+for(i in 1:10) {
+print(names(fact)[i])
+print(chisq.test(bb[,names(fact)[i]],bb$y))
+}
+
+#multicollinearity
+par(mfrow=c(1,1))
+library(corrplot)
+cor.num<-cor(num)
+corrplot(cor.num,method='number')
+
+#skewness of the numeric variables
+par(mfrow=c(2,5))
+for(i in 1:10) {
+boxplot(num[,i]~num$y,data=num,xlab=names(num)[i],ylab=skewness(num[,i]))
+}
+
+#statistical significance of numeric variable
+cormat<-rcorr(as.matrix(num))
+cormat
+
+#********Statistical significance
+#bb$y<-ifelse(bb$y=="no",0,1)
+set.seed(1234)
+ind<-sample(2, nrow(bb), replace=TRUE, prob=c(0.7,0.3))
+train.data<-bb[ind==1,]
+test.data<-bb[ind==2,]
+
+#Generate the model
+myformula<-y~.
+model<-glm(myformula, family=gaussian, data=train.data)
+summary(model)
+anova<-anova(model,test="Chisq")
+anova
+
+#**********Variable importance plot
+set.seed(1234)
+model_rpart<-rpart(y~.,data=train.data,control=rpart.control(cp=0.0001,minsplit=5,maxdepth=15))
+var_imp<-model_rpart$variable.importance
+var_imp
+par(mfrow=c(1,1))
+barplot(var_imp)
+
+#*********************************************************************
+#************************************************************************
+bb<-bb1
+
+chi_job<-chisq.test(bb$job,bb$y)
+#chi_job$observed
+#round(chi_job$expected,2)
+#round(chi_job$residuals,3)
+par(mfrow=c(2,2))
+corrplot(chi_job$residuals, is.cor = FALSE)
+barplot(table(bb$job),col="blue",main="Original Distribution of job")
+bb$job<-as.character(bb$job)
+bb[bb$job %in% c("housemaid","management","self-employed","technician","unemployed","unknown"),]$job<-"Other"
+bb$job<-as.factor(bb$job)
+corrplot(chisq.test(bb$job,bb$y)$residuals, is.cor=FALSE)
+barplot(table(bb$job),col="firebrick",main="Processed Distribution of job")
+
+
+chi_martial<-chisq.test(bb$marital,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_martial$residuals,is.cor = FALSE)
+barplot(table(bb$marital),col="blue",main="Original Distribution of marital")
+
+chi_edu<-chisq.test(bb$education,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_edu$residuals,is.cor=FALSE)
+barplot(table(bb$education),col="blue",main="Original Distribution of education")
+bb$education<-as.character(bb$education)
+bb[bb$education %in% c("professional.course","illiterate","high.school"),]$education<-"Other"
+bb$education<-as.factor(bb$education)
+corrplot(chisq.test(bb$education,bb$y)$residuals,is.cor=FALSE)
+barplot(table(bb$education),col="blue",main="Processed Distribution of education")
+
+chi_default<-chisq.test(bb$default,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_default$residuals,is.cor = FALSE)
+barplot(table(bb$default),col="blue",main="Original Distribution of default")
+#bb$default<-as.character(bb$default)
+#bb[bb$default=="yes",]$default<-"no"
+#bb$default<-as.factor(bb$default)
+
+chi_housing<-chisq.test(bb$housing,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_housing$residuals,is.cor = FALSE)
+barplot(table(bb$housing),col="blue",main="Original Distribution of housing")
+
+chi_loan<-chisq.test(bb$loan,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_loan$residuals,is.cor = FALSE)
+barplot(table(bb$loan),col="blue",main="Original Distribution of loan")
+
+
+chi_contact<-chisq.test(bb$contact,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_contact$residuals,is.cor = FALSE)
+barplot(table(bb$contact),col="blue",main="Original Distribution of contact")
+
+chi_month<-chisq.test(bb$month,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_month$residuals,is.cor = FALSE)
+barplot(table(bb$month),col="blue",main="Original Distribution of month")
+bb$month<-as.character(bb$month)
+bb[bb$month %in% c("aug","jun","nov"),]$month<-"Other"
+bb$month<-as.factor(bb$month)
+corrplot(chisq.test(bb$month,bb$y)$residuals,is.cor=FALSE)
+barplot(table(bb$month),col="blue",main="Processed Distribution of month")
+
+chi_day<-chisq.test(bb$day_of_week,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_day$residuals,is.cor = FALSE)
+barplot(table(bb$day_of_week),col="blue",main="Original Distribution of day_of_week")
+
+chi_poutcome<-chisq.test(bb$poutcome,bb$y)
+par(mfrow=c(2,2))
+corrplot(chi_poutcome$residuals,is.cor = FALSE)
+barplot(table(bb$poutcome),col="blue",main="Original Distribution of poutcome")
+
+bb_fact<-bb
+
+par(mfrow=c(2,2))
+boxplot(bb$age~bb$y,xlab="age",ylab=skewness(bb$age))
+hist(bb$age)
+summary(bb$age)
+table(bb[bb$y=="no",]$age)
+bb[bb$y=="no" & bb$age<18,]$age<-round(mean(bb$age))
+bb[bb$y=="no" & bb$age>60,]$age<-round(mean(bb$age))
+table(bb[bb$y=="yes",]$age)
+bb[bb$y=="yes" & bb$age<18,]$age<-round(mean(bb$age))
+bb[bb$y=="yes" & bb$age>66,]$age<-round(mean(bb$age))
+boxplot(bb$age~bb$y,xlab="age",ylab=skewness(bb$age))
+hist(bb$age)
+summary(bb$age)
+
+
+par(mfrow=c(2,2))
+bb$duration<-round(bb$duration/60)
+boxplot(bb$duration~bb$y,xlab="duration",ylab=skewness(bb$duration))
+hist(bb$duration)
+summary(bb$duration)
+table(round(bb[bb$y=="no",]$duration))
+bb[bb$y=="no" & round(bb$duration)>34,]$duration<-round(mean(bb$duration)) #26
+table(round(bb[bb$y=="yes",]$duration))
+bb[bb$y=="yes" & round(bb$duration)>41,]$duration<-round(mean(bb$duration)) #28
+boxplot(bb$duration~bb$y,xlab="duration",ylab=skewness(bb$duration))
+hist(bb$duration)
+summary(bb$duration)
+
+par(mfrow=c(2,2))
+boxplot(bb$campaign~bb$y,xlab="age",ylab=skewness(bb$campaign))
+hist(bb$campaign)
+summary(bb$campaign)
+table(round(bb[bb$y=="no",]$campaign))
+bb[bb$y=="no" & bb$campaign>12,]$campaign<-round(mean(bb$campaign))
+table(round(bb[bb$y=="yes",]$campaign))
+bb[bb$y=="yes" & bb$campaign>5,]$campaign<-round(mean(bb$campaign))
+boxplot(bb$campaign~bb$y,xlab="age",ylab=skewness(bb$campaign))
+hist(bb$campaign)
+summary(bb$campaign)
+
+par(mfrow=c(2,2))
+boxplot(bb$pdays~bb$y,xlab="pdays",ylab=skewness(bb$pdays))
+hist(bb$pdays)
+summary(bb$pdays)
+#table(round(bb[bb$y=="no",]$pdays))
+table(bb$pdays)
+bb[bb$pdays!=999,]$pdays<-2
+bb[bb$pdays==999,]$pdays<-1
+bb$pdays<-as.factor(bb$pdays)
+table(bb$pdays)
+summary(bb$pdays)
+
+par(mfrow=c(2,2))
+boxplot(bb$previous~bb$y,xlab="age",ylab=skewness(bb$previous))
+hist(bb$previous)
+summary(bb$previous)
+table(bb$previous)
+bb[bb$previous!=0,]$previous<-1
+bb$previous<-as.factor(bb$previous)
+table(bb$previous)
+
+
+
+par(mfrow=c(1,2))
+bb_scale<-bb[,c("emp.var.rate","cons.price.idx","cons.conf.idx","euribor3m","nr.employed")]
+barplot(sapply(bb_scale,var),horiz = T,las=1,cex.names = 0.8, col="orange",main="Before scale - Regular",axisnames=FALSE)
+bb$emp.var.rate<-as.numeric(scale(bb$emp.var.rate,center=TRUE,scale=TRUE))
+bb$cons.price.idx<-as.numeric(scale(bb$cons.price.idx,center=TRUE,scale=TRUE))
+bb$cons.conf.idx<-as.numeric(scale(bb$cons.conf.idx,center=TRUE,scale=TRUE))
+bb$euribor3m<-as.numeric(scale(bb$euribor3m,center=TRUE,scale=TRUE))
+bb$nr.employed<-as.numeric(scale(bb$euribor3m,center=TRUE,scale=TRUE))
+bb_scale<-bb[,c("emp.var.rate","cons.price.idx","cons.conf.idx","euribor3m","nr.employed")]
+barplot(sapply(bb_scale,var),horiz = T,las=1,cex.names = 0.8, col="orange",main="Before scale - Regular",axisnames=FALSE)
+
+#bb$emp_nr<-NA
+#bb$emp_euri<-NA
+#bb$nr_euri<-NA
+
+bb$emp_nr<-(bb$emp.var.rate-bb$nr.employed)/bb$nr.employed
+bb$emp_euri<-(bb$emp.var.rate-bb$euribor3m)/bb$euribor3m
+
+bb$nr_emp<-(bb$nr.employed-bb$emp.var.rate)/bb$emp.var.rate
+bb$nr_euri<-(bb$nr.employed-bb$euribor3m)/bb$euribor3m
+
+bb$euri_emp<-(bb$euribor3m-bb$emp.var.rate)/bb$emp.var.rate
+bb$euri_nr<-(bb$euribor3m-bb$nr.employed)/bb$nr.employed
+
+bb$emp.var.rate<-NULL
+bb$euribor3m<-NULL
+bb$nr.employed<-NULL
+
+
+#after collinearity check
+bb$emp_euri<-NULL
+bb$nr_emp<-NULL
+bb$euri_nr<-NULL
+
+par(mfrow=c(2,2))
+boxplot(bb$emp_nr~bb$y,xlab="emp_nr",ylab=skewness(bb$emp_nr))
+hist(bb$emp_nr)
+summary(bb$emp_nr)
+table(round(bb$emp_nr))
+bb[round(bb$emp_nr)>=0,]$emp_nr<-1
+bb[round(bb$emp_nr)<0,]$emp_nr<-0
+table(bb$emp_nr)
+bb$emp_nr<-as.factor(bb$emp_nr)
+summary(bb$emp_nr)
+
+
+par(mfrow=c(2,2))
+boxplot(bb$nr_euri~bb$y,xlab="nr_euri",ylab=skewness(bb$nr_euri))
+hist(bb$nr_euri)
+bb[bb$nr_euri>=0,]$nr_euri<-1
+bb[bb$nr_euri<0,]$nr_euri<-0
+bb$nr_euri<-as.factor(bb$nr_euri)
+summary(bb$nr_euri)
+
+par(mfrow=c(2,2))
+boxplot(bb$euri_emp~bb$y,xlab="euri_emp",ylab=skewness(bb$euri_emp))
+hist(bb$euri_emp)
+table(round(bb$euri_emp))
+bb[bb$euri_emp>=0,]$euri_emp<-1
+bb[bb$euri_emp<0,]$euri_emp<-0
+bb$euri_emp<-as.factor(bb$euri_emp)
+summary(bb$euri_emp)
+
+
+par(mfrow=c(2,2))
+boxplot(bb$cons.price.idx~bb$y,xlab="cons.price.idx",ylab=skewness(bb$cons.price.idx))
+hist(bb$cons.price.idx)
+summary(bb$cons.price.idx)
+table(round(bb$cons.price.idx))
+bb[round(bb$cons.price.idx)>=0,]$cons.price.idx<-1
+bb[round(bb$cons.price.idx)<0,]$cons.price.idx<-0
+bb$cons.price.idx<-as.factor(bb$cons.price.idx)
+summary(bb$cons.price.idx)
+
+
+par(mfrow=c(2,2))
+boxplot(bb$cons.conf.idx~bb$y,xlab="cons.conf.idx",ylab=skewness(bb$cons.conf.idx))
+hist(bb$cons.conf.idx)
+summary(bb$cons.conf.idx)
+table(round(bb$cons.conf.idx))
+bb[round(bb$cons.conf.idx)>0,]$cons.conf.idx<-1
+bb[round(bb$cons.conf.idx)<=0,]$cons.conf.idx<-0
+bb$cons.conf.idx<-as.factor(bb$cons.conf.idx)
+summary(bb$cons.conf.idx)
+
+bb_final<-bb
+
+bb$housing<-NULL
+bb$loan<-NULL
+
+
+
+#*************************************************************************************************
+#Balance dataset
+par(mfrow=c(1,2))
+prop.table(table(bb$y))
+barplot(prop.table(table(bb$y)),col="orange",main="Class Imbalance on Target variable")
+set.seed(1234)
+bb<-SMOTE(y~.,bb,perc.over=350,perc.under=150)
+#train.smote$IsBadBuy<-ifelse(train.smote$IsBadBuy==0,0,1)
+prop.table(table(bb$y))
+barplot(prop.table(table(bb$y)),col="orange",main="After SMOTE processing")
+
+bb_smote<-bb
+
+
+
+
+

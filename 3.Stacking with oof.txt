@@ -1,0 +1,81 @@
+
+results<-resamples(list(glm=model_glm,tree=model_rpart,gbm=model_boost,xgboost=model_xgboost,nnet=model_nnet,knn=model_knn,bag=model_bag,rf=model_rf))
+summary(results)
+modelCor(results)
+
+scales<-list(x=list(relation="free"),y=list(relation="free"))
+bwplot(results,scale=scales)
+
+
+***************************************************
+#stacking with xgboost and rf and boost
+bb<-bb_smote
+set.seed(1234)
+ind<-sample(2, nrow(bb), replace=TRUE, prob=c(0.7,0.3))
+train.data<-bb[ind==1,]
+test.data<-bb[ind==2,]
+
+train.data$oof_pred_xgboost<-model_xgboost$pred$yes[order(model_xgboost$pred$rowIndex)]
+train.data$oof_pred_rf<-model_rf$pred$yes[order(model_rf$pred$rowIndex)]
+train.data$oof_pred_boost<-model_boost$pred$yes[order(model_boost$pred$rowIndex)]
+
+col_names_test.data <- c(colnames(test.data[,-c(16)]))
+col_names_test.dum <- c(colnames(test.dum[,-c(50)]))
+
+test.data$oof_pred_xgboost<-predict(model_xgboost,test.dum[col_names_test.dum],type='prob')$yes
+test.data$oof_pred_rf<-predict(model_rf,test.data[col_names_test.data],type='prob')$yes
+test.data$oof_pred_boost<-predict(model_boost,test.data[col_names_test.data],type='prob')$yes
+
+
+#predictors_top<-c('OOF_pred_xgboost','OOF_pred_rf') 
+
+boost_grid<-expand.grid(n.trees=1500,shrinkage=0.01,interaction.depth=4,n.minobsinnode=50)
+fitControl <- trainControl(method = "cv", number = 5, classProbs = T, savePredictions = 'final') 
+set.seed(1234)
+model_stack3<- train(train.data[,colnames(train.data)!="y"],train.data[,"y"],method='gbm',trControl=fitControl,tuneGrid=boost_grid)
+
+pred_train_stack<-predict(model_stack3,train.data)
+confusionMatrix(data=pred_train_stack,reference = train.data$y)
+
+pred_test_stack<-predict(model_stack3,test.data)
+confusionMatrix(data=pred_test_stack,reference = test.data$y)
+
+
+***************************************************************************************
+#stacking with xgboost and rf
+bb<-bb_smote
+set.seed(1234)
+ind<-sample(2, nrow(bb), replace=TRUE, prob=c(0.7,0.3))
+train.data<-bb[ind==1,]
+test.data<-bb[ind==2,]
+
+train.data$OOF_pred_xgboost<-model_xgboost$pred$yes[order(model_xgboost$pred$rowIndex)]
+train.data$OOF_pred_rf<-model_rf$pred$yes[order(model_rf$pred$rowIndex)]
+
+
+col_names_test.data <- c(colnames(test.data[,-c(16)]))
+col_names_test.dum <- c(colnames(test.dum[,-c(50)]))
+
+test.data$OOF_pred_xgboost<-predict(model_xgboost,test.dum[col_names_test.dum],type='prob')$yes
+test.data$OOF_pred_rf<-predict(model_rf,test.data[col_names_test.data],type='prob')$yes
+
+
+#predictors_top<-c('OOF_pred_xgboost','OOF_pred_rf') 
+
+boost_grid<-expand.grid(n.trees=1500,shrinkage=0.01,interaction.depth=4,n.minobsinnode=50)
+fitControl <- trainControl(method = "cv", number = 5, classProbs = T, savePredictions = 'final') 
+set.seed(1234)
+model_stack2<- train(train.data[,colnames(train.data)!="y"],train.data[,"y"],method='gbm',trControl=fitControl,tuneGrid=boost_grid)
+
+pred_train_stack<-predict(model_stack2,train.data)
+confusionMatrix(data=pred_train_stack,reference = train.data$y)
+
+pred_test_stack<-predict(model_stack2,test.data)
+confusionMatrix(data=pred_test_stack,reference = test.data$y)
+
+*****************************************************************************************************
+results<-resamples(list(gbm=model_boost,xgboost=model_xgboost,rf=model_rf,stack2=model_stack2,stack3=model_stack3))
+scales<-list(x=list(relation="free"),y=list(relation="free"))
+bwplot(results,scale=scales)
+
+
